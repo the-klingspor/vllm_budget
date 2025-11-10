@@ -1,10 +1,10 @@
+"""
+Configuration module for vllm_budget library.
+"""
+
 from typing import Optional
 from dataclasses import dataclass
 
-
-# ============================================================================
-# Configuration
-# ============================================================================
 
 @dataclass
 class ThinkingBudgetConfig:
@@ -17,7 +17,7 @@ class ThinkingBudgetConfig:
     
     def __post_init__(self):
         """Validate configuration after initialization."""
-        pass
+        self.validate()
     
     def validate(self) -> None:
         """
@@ -26,7 +26,18 @@ class ThinkingBudgetConfig:
         Raises:
             ValueError: If configuration is invalid.
         """
-        pass
+        if self.thinking_budget <= 0:
+            raise ValueError(
+                f"thinking_budget must be positive, got {self.thinking_budget}"
+            )
+        
+        if not self.early_stopping_text or len(self.early_stopping_text.strip()) == 0:
+            raise ValueError("early_stopping_text cannot be empty")
+        
+        if self.think_end_token_id is not None and self.think_end_token_id < 0:
+            raise ValueError(
+                f"think_end_token_id must be non-negative, got {self.think_end_token_id}"
+            )
     
     @classmethod
     def from_dict(cls, config_dict: dict) -> 'ThinkingBudgetConfig':
@@ -38,5 +49,14 @@ class ThinkingBudgetConfig:
             
         Returns:
             ThinkingBudgetConfig instance.
+            
+        Raises:
+            KeyError: If required fields are missing.
+            TypeError: If field types are incorrect.
         """
-        pass
+        required_fields = ['thinking_budget', 'early_stopping_text']
+        for field in required_fields:
+            if field not in config_dict:
+                raise KeyError(f"Required field '{field}' missing from config_dict")
+        
+        return cls(**config_dict)

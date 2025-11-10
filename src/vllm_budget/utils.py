@@ -1,3 +1,8 @@
+"""
+Utility functions for vllm_budget library.
+"""
+
+
 def get_default_early_stopping_text() -> str:
     """
     Get default early stopping text.
@@ -5,7 +10,7 @@ def get_default_early_stopping_text() -> str:
     Returns:
         Default early stopping text string.
     """
-    pass
+    return "\n\nConsidering the limited time by the user, I have to give the solution based on the thinking directly now.\n</think>\n\n"
 
 
 def get_default_think_end_token() -> str:
@@ -15,4 +20,4 @@ def get_default_think_end_token() -> str:
     Returns:
         Default think end token string.
     """
-    pass
+    return "</think>"

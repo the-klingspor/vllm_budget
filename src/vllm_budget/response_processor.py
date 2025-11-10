@@ -1,10 +1,10 @@
-from typing import List, Optional, Union, Any
+"""
+Response processing module for vllm_budget library.
+"""
 
+from typing import List, Optional, Union, Any, Tuple
 from vllm_budget.token_detector import TokenDetector
 
-# ============================================================================
-# Response Processing
-# ============================================================================
 
 class ResponseProcessor:
     """Processes multi-stage generation responses."""
@@ -17,14 +17,15 @@ class ResponseProcessor:
             tokenizer: Tokenizer instance.
             token_detector: TokenDetector instance.
         """
-        pass
+        self.tokenizer = tokenizer
+        self.token_detector = token_detector
     
     def process_first_stage(
         self,
         outputs: List[Any],
         prompts: List[Union[str, List[int]]],
         early_stopping_tokens: List[int]
-    ) -> tuple:
+    ) -> Tuple[List[Optional[List[int]]], List[Union[str, List[int]]], List[int], List[int]]:
         """
         Process first stage generation outputs.
         
@@ -37,7 +38,44 @@ class ResponseProcessor:
             Tuple of (final_responses, second_stage_prompts, second_stage_indices, 
                      original_prompt_lengths).
         """
-        pass
+        final_responses = []
+        second_stage_prompts = []
+        second_stage_indices = []
+        original_prompt_lengths = []
+        
+        for batch_idx, output in enumerate(outputs):
+            # Get corresponding prompt
+            prompt = prompts[batch_idx]
+            
+            for sample_id in range(len(output.outputs)):
+                first_tokens = output.outputs[sample_id].token_ids
+                
+                # Check if generation already finished (hit end token)
+                if self.token_detector.has_eos_token(first_tokens):
+                    final_responses.append(first_tokens)
+                    continue
+                
+                # Check if thinking phase completed naturally (found </think> token)
+                if self.token_detector.has_think_end_token(first_tokens):
+                    # Thinking completed, prepare for second stage
+                    combined_prompt = self.reconstruct_prompt(prompt, first_tokens)
+                    
+                    second_stage_prompts.append(combined_prompt)
+                    second_stage_indices.append(len(final_responses))
+                    original_prompt_lengths.append(self.get_prompt_token_length(prompt))
+                    final_responses.append(None)  # Placeholder
+                else:
+                    # Thinking budget exhausted, add early stopping text
+                    combined_prompt = self.reconstruct_prompt(
+                        prompt, first_tokens, early_stopping_tokens
+                    )
+                    
+                    second_stage_prompts.append(combined_prompt)
+                    second_stage_indices.append(len(final_responses))
+                    original_prompt_lengths.append(self.get_prompt_token_length(prompt))
+                    final_responses.append(None)  # Placeholder
+        
+        return final_responses, second_stage_prompts, second_stage_indices, original_prompt_lengths
     
     def process_second_stage(
         self,
@@ -58,7 +96,19 @@ class ResponseProcessor:
         Returns:
             Complete list of final token sequences.
         """
-        pass
+        for i, output in enumerate(outputs):
+            for sample_id in range(len(output.outputs)):
+                complete_tokens = output.outputs[sample_id].token_ids
+                
+                # Extract only the new tokens (remove original prompt)
+                original_length = original_prompt_lengths[i]
+                final_tokens = complete_tokens[original_length:]
+                
+                # Update final response
+                response_idx = second_stage_indices[i]
+                final_responses[response_idx] = final_tokens
+        
+        return final_responses
     
     def reconstruct_prompt(
         self,
@@ -77,7 +127,29 @@ class ResponseProcessor:
         Returns:
             Combined prompt in same format as input.
         """
-        pass
+        if isinstance(prompt, str):
+            # String format: encode prompt, combine, decode back
+            prompt_tokens = self.tokenizer.encode(prompt, add_special_tokens=False)
+            
+            # Handle different tokenizer return types
+            if hasattr(prompt_tokens, 'tolist'):
+                prompt_tokens = prompt_tokens.tolist()
+            elif not isinstance(prompt_tokens, list):
+                prompt_tokens = [prompt_tokens] if isinstance(prompt_tokens, int) else list(prompt_tokens)
+            
+            # Combine tokens
+            combined_tokens = prompt_tokens + first_tokens
+            if additional_tokens:
+                combined_tokens += additional_tokens
+            
+            # Decode back to string
+            return self.tokenizer.decode(combined_tokens, skip_special_tokens=False)
+        else:
+            # Token ID format: direct concatenation
+            combined_tokens = list(prompt) + first_tokens
+            if additional_tokens:
+                combined_tokens += additional_tokens
+            return combined_tokens
     
     def get_prompt_token_length(self, prompt: Union[str, List[int]]) -> int:
         """
@@ -89,4 +161,11 @@ class ResponseProcessor:
         Returns:
             Number of tokens in prompt.
         """
-        pass
+        if isinstance(prompt, str):
+            encoded = self.tokenizer.encode(prompt, add_special_tokens=False)
+            if hasattr(encoded, '__len__'):
+                return len(encoded)
+            else:
+                return 1  # Single token
+        else:
+            return len(prompt)
