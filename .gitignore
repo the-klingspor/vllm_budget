@@ -1,0 +1,10 @@
+# Byte-compiled / optimized / DLL files
+**/__pycache__
+
+# Environment variables
+uv.lock
+*.egg-info/
+
+# Tests
+.coverage
+test_flash_attn.py
