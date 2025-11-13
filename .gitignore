@@ -11,3 +11,6 @@ uv.lock
 test_flash_attn.py
 /htmlcov/
 coverage.xml
+
+# Scripts
+scripts/*
