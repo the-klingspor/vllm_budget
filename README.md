@@ -195,12 +195,11 @@ pytest tests/ --cov=vllm_budget --cov-report=html
 
 ```
 vllm_budget/
-├── __init__.py          # Package initialization
-├── config.py            # Configuration classes
-├── token_detector.py    # Token detection logic
-├── response_processor.py # Multi-stage response handling
-├── wrapper.py           # Main ThinkingBudgetLLM class
-└── utils.py             # Utility functions
+├── config.py               # Configuration classes
+├── token_detector.py       # Token detection logic
+├── response_processor.py   # Multi-stage response handling
+├── thinking_budget_llm.py  # Main ThinkingBudgetLLM class
+└── utils.py                # Utility functions
 
 tests/
 └── test_thinking_budget.py  # Comprehensive test suite
@@ -221,8 +220,8 @@ If you use this library in your research, please cite:
 ```bibtex
 @software{vllm_budget,
   title = {vllm_budget: Thinking Budget Wrapper for vLLM},
-  author = {Your Name},
-  year = {2024},
+  author = {Joschka Strüber},
+  year = {2025},
   url = {https://github.com/yourusername/vllm_budget}
 }
 ```
