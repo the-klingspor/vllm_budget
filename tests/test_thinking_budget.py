@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from vllm_budget.config import ThinkingBudgetConfig
 from vllm_budget.token_detector import TokenDetector
 from vllm_budget.response_processor import ResponseProcessor
-from vllm_budget.wrapper import ThinkingBudgetLLM
+from vllm_budget.thinking_budget_llm import ThinkingBudgetLLM
 from vllm_budget.utils import get_default_early_stopping_text, get_default_think_end_token
 
 
@@ -257,24 +257,24 @@ class TestResponseProcessor:
     
     def test_process_first_stage_thinking_complete(self, response_processor):
         """Test first stage when thinking completes naturally."""
-        # Mock output with think end token
+        # Mock output with think end token (avoiding EOS token id=2)
         mock_output = Mock()
-        mock_output.outputs = [Mock(token_ids=[1, 2, 999, 5])]  # 999 is think end
+        mock_output.outputs = [Mock(token_ids=[1, 3, 999, 5])]  # 999 is think end, no EOS (2)
         outputs = [mock_output]
         prompts = [[10, 20]]
         early_stopping_tokens = [99, 100]
         
         final_responses, second_stage_prompts, indices, lengths = \
             response_processor.process_first_stage(outputs, prompts, early_stopping_tokens)
-        
-        assert len(second_stage_prompts) == 1
+
         assert final_responses[0] is None  # Placeholder
+        assert len(second_stage_prompts) == 1, "Thinking finished, but no EOS found"
     
     def test_process_first_stage_budget_exhausted(self, response_processor):
         """Test first stage when thinking budget exhausted."""
         # Mock output without EOS or think end token
         mock_output = Mock()
-        mock_output.outputs = [Mock(token_ids=[1, 2, 3, 4])]
+        mock_output.outputs = [Mock(token_ids=[3, 4, 5, 6])]  # No EOS (2) or think end (999)
         outputs = [mock_output]
         prompts = [[10, 20]]
         early_stopping_tokens = [99, 100]
@@ -349,7 +349,7 @@ class TestResponseProcessor:
         mock_output2.outputs = [Mock(token_ids=[50, 60, 70, 80])]
         
         outputs = [mock_output1, mock_output2]
-        final_responses = [Mock(token_ids=[1, 2]), None, None]
+        final_responses = [[1, 2], None, None]  # First response complete from first stage
         second_stage_indices = [1, 2]
         original_prompt_lengths = [1, 2]
         
@@ -385,7 +385,7 @@ class TestResponseProcessor:
 class TestThinkingBudgetLLM:
     """Tests for main ThinkingBudgetLLM wrapper."""
     
-    @patch('vllm_budget.wrapper.LLM')
+    @patch('vllm_budget.thinking_budget_llm.LLM')
     def test_initialization(self, mock_llm_class):
         """Test basic initialization."""
         llm = ThinkingBudgetLLM(
@@ -395,7 +395,7 @@ class TestThinkingBudgetLLM:
         )
         assert llm is not None
     
-    @patch('vllm_budget.wrapper.LLM')
+    @patch('vllm_budget.thinking_budget_llm.LLM')
     def test_from_vllm(self, mock_llm_class):
         """Test creation from existing vLLM instance."""
         mock_vllm = Mock()
@@ -431,7 +431,7 @@ class TestThinkingBudgetLLM:
         result = llm._normalize_prompts(prompts)
         assert result == prompts
     
-    @patch('vllm_budget.wrapper.LLM')
+    @patch('vllm_budget.thinking_budget_llm.LLM')
     def test_generate_without_thinking_budget(self, mock_llm_class):
         """Test standard generation when no thinking budget specified."""
         mock_engine = Mock()
@@ -444,11 +444,21 @@ class TestThinkingBudgetLLM:
         # Should call standard vLLM generate
         mock_engine.generate.assert_called_once()
     
-    @patch('vllm_budget.wrapper.LLM')
+    @patch('vllm_budget.thinking_budget_llm.LLM')
     def test_generate_with_thinking_budget(self, mock_llm_class):
         """Test generation with thinking budget."""
+        # Create mock tokenizer
+        mock_tokenizer = Mock()
+        mock_tokenizer.eos_token_id = 2
+        mock_tokenizer.encode = Mock(side_effect=lambda text, add_special_tokens=False: 
+                                     [100 + i for i in range(len(text.split()))])
+        mock_tokenizer.decode = Mock(side_effect=lambda ids, skip_special_tokens=False: 
+                                     " ".join([f"word{i}" for i in ids]))
+        
+        # Create mock engine
         mock_engine = Mock()
-        mock_engine.generate.return_value = [Mock(outputs=[Mock(token_ids=[1, 2, 999])])]
+        mock_engine.get_tokenizer = Mock(return_value=mock_tokenizer)
+        mock_engine.generate.return_value = [Mock(outputs=[Mock(token_ids=[1, 3, 999])])]  # No EOS
         mock_llm_class.return_value = mock_engine
         
         llm = ThinkingBudgetLLM(
@@ -473,11 +483,15 @@ class TestThinkingBudgetLLM:
         llm = Mock(spec=ThinkingBudgetLLM)
         llm._copy_sampling_params = ThinkingBudgetLLM._copy_sampling_params.__get__(llm)
         
-        original = Mock(max_tokens=100, temperature=0.8)
+        # Create mock without copy method to test deepcopy path
+        original = Mock(spec=['max_tokens', 'temperature'])
+        original.max_tokens = 100
+        original.temperature = 0.8
         copy = llm._copy_sampling_params(original)
         
         assert copy is not original
         assert copy.max_tokens == 100
+        assert copy.temperature == 0.8
 
 
 # ============================================================================
@@ -487,21 +501,30 @@ class TestThinkingBudgetLLM:
 class TestIntegration:
     """Integration tests for complete workflows."""
     
-    @patch('vllm_budget.wrapper.LLM')
+    @patch('vllm_budget.thinking_budget_llm.LLM')
     def test_complete_two_stage_flow(self, mock_llm_class):
         """Test complete two-stage generation flow."""
+        # Create mock tokenizer
+        mock_tokenizer = Mock()
+        mock_tokenizer.eos_token_id = 2
+        mock_tokenizer.encode = Mock(side_effect=lambda text, add_special_tokens=False: 
+                                     [100 + i for i in range(len(text.split()))])
+        mock_tokenizer.decode = Mock(side_effect=lambda ids, skip_special_tokens=False: 
+                                     " ".join([f"word{i}" for i in ids]))
+        
         # Setup mock engine
         mock_engine = Mock()
+        mock_engine.get_tokenizer = Mock(return_value=mock_tokenizer)
         
-        # First stage: thinking not complete
+        # First stage: thinking not complete (no EOS, no think end)
         first_output = Mock()
-        first_output.outputs = [Mock(token_ids=[1, 2, 3, 4, 5])]
+        first_output.outputs = [Mock(token_ids=[1, 3, 4, 5, 6])]  # Avoid EOS (2)
         
         # Second stage: completion
         second_output = Mock()
-        second_output.outputs = [Mock(token_ids=[10, 20, 1, 2, 3, 4, 5, 6, 7, 2])]
+        second_output.outputs = [Mock(token_ids=[10, 20, 1, 3, 4, 5, 6, 7, 8, 2])]  # With EOS
         
-        mock_engine.generate.side_effect = [first_output, second_output]
+        mock_engine.generate.side_effect = [[first_output], [second_output]]
         mock_llm_class.return_value = mock_engine
         
         llm = ThinkingBudgetLLM(
