@@ -4,7 +4,10 @@
 # Environment variables
 uv.lock
 *.egg-info/
+/vllm_budget.egg-info/
 
 # Tests
 .coverage
 test_flash_attn.py
+/htmlcov/
+coverage.xml
