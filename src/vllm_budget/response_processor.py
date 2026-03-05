@@ -3,6 +3,7 @@ Response processing module for vllm_budget library.
 """
 
 from typing import List, Optional, Union, Any, Tuple
+
 from vllm_budget.token_detector import TokenDetector
 
 
@@ -79,6 +80,7 @@ class ResponseProcessor:
     
     def process_second_stage(
         self,
+        second_stage_prompts: List[Union[str, List[int]]],
         outputs: List[Any],
         final_responses: List[Optional[List[int]]],
         second_stage_indices: List[int],
@@ -88,6 +90,7 @@ class ResponseProcessor:
         Process second stage generation outputs and merge with first stage.
         
         Args:
+            second_stage_prompts: Prompts used for second stage generation, including first_response, early_stopping and </think>.
             outputs: vLLM generation outputs from second stage.
             final_responses: Response list with placeholders from first stage.
             second_stage_indices: Indices mapping second stage to final responses.
@@ -98,8 +101,18 @@ class ResponseProcessor:
         """
         for i, output in enumerate(outputs):
             for sample_id in range(len(output.outputs)):
-                complete_tokens = output.outputs[sample_id].token_ids
+
+                prompt = second_stage_prompts[i]
+                if isinstance(prompt, str):
+                    prompt_tokens = self.tokenizer.encode(prompt, add_special_tokens=False)
+
+                else:
+                    prompt_tokens = prompt
+
                 
+                # Combine second stage prompt tokens with generated tokens
+                complete_tokens = prompt_tokens + output.outputs[sample_id].token_ids
+
                 # Extract only the new tokens (remove original prompt)
                 original_length = original_prompt_lengths[i]
                 final_tokens = complete_tokens[original_length:]

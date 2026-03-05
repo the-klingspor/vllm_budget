@@ -328,15 +328,16 @@ class TestResponseProcessor:
         """Test second stage processing."""
         # Mock second stage output
         mock_output = Mock()
-        mock_output.outputs = [Mock(token_ids=[10, 20, 30, 40, 50])]  # Includes original prompt
+        mock_output.outputs = [Mock(token_ids=[30, 40, 50])]  # Includes original prompt
         outputs = [mock_output]
+        second_stage_prompts = [[10, 20]]
         
         final_responses = [None]
         second_stage_indices = [0]
         original_prompt_lengths = [2]  # First 2 tokens are prompt
         
         result = response_processor.process_second_stage(
-            outputs, final_responses, second_stage_indices, original_prompt_lengths
+            second_stage_prompts, outputs, final_responses, second_stage_indices, original_prompt_lengths
         )
         
         assert result[0] == [30, 40, 50]  # Only new tokens after prompt
@@ -344,35 +345,38 @@ class TestResponseProcessor:
     def test_process_second_stage_multiple_outputs(self, response_processor):
         """Test second stage with multiple incomplete outputs."""
         mock_output1 = Mock()
-        mock_output1.outputs = [Mock(token_ids=[10, 20, 30, 40])]
+        mock_output1.outputs = [Mock(token_ids=[30, 40])]
         mock_output2 = Mock()
-        mock_output2.outputs = [Mock(token_ids=[50, 60, 70, 80])]
+        mock_output2.outputs = [Mock(token_ids=[80, 90])]
         
         outputs = [mock_output1, mock_output2]
         final_responses = [[1, 2], None, None]  # First response complete from first stage
         second_stage_indices = [1, 2]
         original_prompt_lengths = [1, 2]
+
+        second_stage_prompts = [[10, 20], [50, 60, 70]]
         
         result = response_processor.process_second_stage(
-            outputs, final_responses, second_stage_indices, original_prompt_lengths
+            second_stage_prompts, outputs, final_responses, second_stage_indices, original_prompt_lengths
         )
         
         assert result[0] == [1, 2]  # Unchanged from first stage
         assert result[1] == [20, 30, 40]
-        assert result[2] == [70, 80]
+        assert result[2] == [70, 80, 90]
     
     def test_process_second_stage_empty_new_tokens(self, response_processor):
         """Test second stage when no new tokens generated."""
         mock_output = Mock()
-        mock_output.outputs = [Mock(token_ids=[10, 20])]  # Only prompt tokens
+        mock_output.outputs = [Mock(token_ids=[])]  # Only prompt tokens
         outputs = [mock_output]
         
         final_responses = [None]
         second_stage_indices = [0]
         original_prompt_lengths = [2]
+        second_stage_prompts = [[10, 20]]
         
         result = response_processor.process_second_stage(
-            outputs, final_responses, second_stage_indices, original_prompt_lengths
+            second_stage_prompts, outputs, final_responses, second_stage_indices, original_prompt_lengths
         )
         
         assert result[0] == []
@@ -492,6 +496,9 @@ class TestThinkingBudgetLLM:
         assert copy is not original
         assert copy.max_tokens == 100
         assert copy.temperature == 0.8
+
+
+
 
 
 # ============================================================================

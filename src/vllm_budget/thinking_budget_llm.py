@@ -2,7 +2,7 @@
 Main wrapper module for vllm_budget library.
 """
 
-from typing import List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any
 from copy import deepcopy
 
 from vllm import LLM
@@ -115,7 +115,13 @@ class ThinkingBudgetLLM:
     
     def generate(
         self,
-        prompts: Union[str, List[str], List[List[int]]],
+        prompts: Union[
+            str,                           # Single text prompt
+            List[str],                     # List of text prompts
+            Dict[str, List[int]],          # Single TokensPrompt
+            List[Dict[str, List[int]]],    # List of TokensPrompt
+            List[List[int]],               # List of token ID prompts
+        ],
         sampling_params: Any,
         thinking_budget: Optional[int] = None,
         use_tqdm: bool = True
@@ -156,7 +162,13 @@ class ThinkingBudgetLLM:
     
     def _generate_with_thinking_budget(
         self,
-        prompts: Union[str, List[str], List[List[int]]],
+        prompts: Union[
+            str,                           # Single text prompt
+            List[str],                     # List of text prompts
+            Dict[str, List[int]],          # Single TokensPrompt
+            List[Dict[str, List[int]]],    # List of TokensPrompt
+            List[List[int]],               # List of token ID prompts
+        ],
         sampling_params: Any,
         thinking_budget: int,
         use_tqdm: bool
@@ -212,6 +224,7 @@ class ThinkingBudgetLLM:
             
             # Process second stage results
             final_responses = self.response_processor.process_second_stage(
+                second_stage_prompts=second_stage_prompts,
                 outputs=second_outputs,
                 final_responses=final_responses,
                 second_stage_indices=second_stage_indices,
@@ -237,7 +250,14 @@ class ThinkingBudgetLLM:
         if isinstance(prompts, str):
             return [prompts]
         elif isinstance(prompts, list):
-            return prompts
+            if all(isinstance(p, str) for p in prompts):
+                return prompts
+            elif all(isinstance(p, dict) for p in prompts):
+                return prompts
+            elif all(isinstance(p, list) for p in prompts):
+                return [{"prompt_token_ids": p} for p in prompts]
+        elif isinstance(prompts, dict):
+            return [prompts]
         else:
             return [prompts]
     
